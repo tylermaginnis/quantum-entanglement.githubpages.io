@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quantum Entanglement</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+            animation: backgroundAnimation 10s infinite;
+        }
+        @keyframes backgroundAnimation {
+            0% { background-color: #000; }
+            50% { background-color: #111; }
+            100% { background-color: #000; }
+        }
+        #gameArea {
+            width: 80%;
+            height: 80%;
+            background-color: #333;
+            position: relative;
+        }
+        .particle {
+            width: 5px;
+            height: 5px;
+            position: absolute;
+            background-color: yellow;
+            border-radius: 50%;
+            opacity: 0.8;
+        }
+        .character {
+            background-color: red;
+            width: 20px;
+            height: 20px;
+            position: absolute;
+        }
+        .shadow {
+            background-color: rgba(0, 0, 0, 0.5);
+            width: 20px;
+            height: 20px;
+            position: absolute;
+        }
+        .obstacle {
+            width: 50px;
+            height: 50px;
+            background-color: blue;
+            position: absolute;
+        }
+        .power-up {
+            width: 20px;
+            height: 20px;
+            background-color: gold;
+            position: absolute;
+            border-radius: 50%;
+        }
+        .enemy {
+            width: 20px;
+            height: 20px;
+            background-color: purple;
+            position: absolute;
+        }
+        .portal {
+            width: 30px;
+            height: 30px;
+            background-color: cyan;
+            position: absolute;
+            border-radius: 50%;
+        }
+        #timeControl {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 10px;
+        }
+        #clock {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: white;
+            font-size: 20px;
+        }
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+        }
+        #health {
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            color: white;
+            font-size: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameArea">
+        <div id="clock"></div>
+        <div id="score">Score: 0</div>
+        <div id="health">Health: 100</div>
+    </div>
+    <script>
+        const gameState = {
+            character: { x: -0.9, y: -0.9, targetX: null, targetY: null, collectedPowerUps: 0 },
+            shadow: { x: 0.9, y: 0.9, targetX: null, targetY: null, collectedPowerUps: 0 },
+            obstacles: [],
+            powerUps: [],
+            enemies: [],
+            portals: [],
+            isManipulatingTime: false,
+            timeDirection: null,
+            score: 0,
+            health: 100,
+            level: 1,
+            particles: [],
+            totalPowerUps: 0 // Added to store the number of powerUps
+        };
+
+        function playMoveSound() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.type = 'square';
+            oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // value in hertz
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playCollisionSound() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(220, audioCtx.currentTime); // value in hertz
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playPowerUpSound() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // value in hertz
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.1);
+        }
+
+        function playExplosionSound() {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+
+            oscillator.type = 'sawtooth';
+            oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); // start frequency in hertz
+            oscillator.frequency.linearRampToValueAtTime(880, audioCtx.currentTime + 0.5); // end frequency in hertz
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.5);
+        }
+
+        function initGame() {
+            const canvas = document.getElementById('gameArea');
+            canvas.addEventListener('mousedown', onMouseDown);
+            canvas.addEventListener('mousemove', onMouseMove);
+            generateLevel(gameState.level);
+            requestAnimationFrame(gameLoop);
+        }
+
+        function onMouseDown(event) {
+            const x = event.clientX;
+            const y = event.clientY;
+            const rect = document.getElementById('gameArea').getBoundingClientRect();
+            const canvasX = ((x - rect.left) / rect.width) * 2 - 1;
+            const canvasY = ((y - rect.top) / rect.height) * -2 + 1;
+
+            gameState.character.targetX = canvasX;
+            gameState.character.targetY = canvasY;
+            gameState.shadow.targetX = -canvasX;
+            gameState.shadow.targetY = -canvasY;
+
+            playMoveSound();
+        }
+
+        function onMouseMove(event) {
+            // No need to handle mouse move for this game
+        }
+
+        function manipulateTime(direction) {
+            gameState.isManipulatingTime = true;
+            gameState.timeDirection = direction;
+        }
+
+        function checkCollision(x, y) {
+            return gameState.obstacles.some(obstacle => Math.abs(obstacle.x - x) < 0.05 && Math.abs(obstacle.y - y) < 0.05);
+        }
+
+        function checkWinCondition() {
+            const collectedPowerUps = gameState.character.collectedPowerUps + gameState.shadow.collectedPowerUps;
+
+            console.log(`Total power-ups: ${gameState.totalPowerUps}`);
+            console.log(`Collected power-ups: ${collectedPowerUps}`);
+
+            return collectedPowerUps === gameState.totalPowerUps;
+        }
+
+        function gameLoop() {
+            update();
+            render();
+            if (checkWinCondition()) {
+                alert('You win!');
+                gameState.level++;
+                generateLevel(gameState.level);
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            const character = gameState.character;
+            const shadow = gameState.shadow;
+            const speed = 0.01;
+
+            //console.log('Update called');
+            //console.log(`Character position: (${character.x}, ${character.y})`);
+            //console.log(`Shadow position: (${shadow.x}, ${shadow.y})`);
+
+            if (character.targetX !== null && character.targetY !== null) {
+                const dx = character.targetX - character.x;
+                const dy = character.targetY - character.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > speed) {
+                    const newX = character.x + (dx / distance) * speed;
+                    const newY = character.y + (dy / distance) * speed;
+                    if (!checkCollision(newX, newY)) {
+                        character.x = newX;
+                        character.y = newY;
+                        createParticles(character.x, character.y);
+                    }
+                } else {
+                    character.x = character.targetX;
+                    character.y = character.targetY;
+                    character.targetX = null;
+                    character.targetY = null;
+                }
+            }
+
+            if (shadow.targetX !== null && shadow.targetY !== null) {
+                const dx = shadow.targetX - shadow.x;
+                const dy = shadow.targetY - shadow.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > speed) {
+                    const newX = shadow.x + (dx / distance) * speed;
+                    const newY = shadow.y + (dy / distance) * speed;
+                    if (!checkCollision(newX, newY)) {
+                        shadow.x = newX;
+                        shadow.y = newY;
+                    }
+                } else {
+                    shadow.x = shadow.targetX;
+                    shadow.y = shadow.targetY;
+                    shadow.targetX = null;
+                    shadow.targetY = null;
+                }
+            }
+
+            gameState.obstacles.forEach(obstacle => {
+                const obstacleSpeed = 0.005;
+                obstacle.x += obstacle.directionX * obstacleSpeed;
+                obstacle.y += obstacle.directionY * obstacleSpeed;
+
+                if (obstacle.x > 1 || obstacle.x < -1) {
+                    obstacle.directionX *= -1;
+                }
+                if (obstacle.y > 1 || obstacle.y < -1) {
+                    obstacle.directionY *= -1;
+                }
+            });
+
+            gameState.enemies.forEach(enemy => {
+                const enemySpeed = 0.007;
+                const dx = gameState.character.x - enemy.x;
+                const dy = gameState.character.y - enemy.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                if (distance > enemySpeed) {
+                    enemy.x += (dx / distance) * enemySpeed;
+                    enemy.y += (dy / distance) * enemySpeed;
+                }
+            });
+
+            if (gameState.isManipulatingTime) {
+                // Implement time manipulation logic here
+                gameState.isManipulatingTime = false;
+            }
+
+            gameState.powerUps.forEach((powerUp, index) => {
+                if (Math.abs(gameState.character.x - powerUp.x) < 0.05 && Math.abs(gameState.character.y - powerUp.y) < 0.05) {
+                    gameState.character.collectedPowerUps++;
+                    gameState.score += 10;
+                    playPowerUpSound();
+                    createExplosionParticles(powerUp.x, powerUp.y);
+                    gameState.powerUps.splice(index, 1);
+                }
+                if (Math.abs(gameState.shadow.x - powerUp.x) < 0.05 && Math.abs(gameState.shadow.y - powerUp.y) < 0.05) {
+                    gameState.shadow.collectedPowerUps++;
+                    gameState.score += 10;
+                    playPowerUpSound();
+                    createExplosionParticles(powerUp.x, powerUp.y);
+                    gameState.powerUps.splice(index, 1);
+                }
+            });
+
+            gameState.portals.forEach((portal, index) => {
+                if (Math.abs(gameState.shadow.x - portal.x) < 0.05 && Math.abs(gameState.shadow.y - portal.y) < 0.05) {
+                    gameState.shadow.collectedPowerUps++;
+                    gameState.score += 20; // Portals give more points
+                    playPowerUpSound();
+                    createExplosionParticles(portal.x, portal.y);
+                    gameState.portals.splice(index, 1);
+                }
+            });
+
+            gameState.enemies.forEach(enemy => {
+                if (Math.abs(gameState.character.x - enemy.x) < 0.05 && Math.abs(gameState.character.y - enemy.y) < 0.05) {
+                    gameState.health -= 10;
+                    playCollisionSound();
+                }
+            });
+
+            if (gameState.health <= 0) {
+                if (confirm('Game Over! Do you want to restart the level?')) {
+                    generateLevel(gameState.level);
+                    gameState.health = 100;
+                    gameState.score = 0;
+                }
+                return;
+            }
+
+            updateParticles();
+        }
+
+        function render() {
+            const gameArea = document.getElementById('gameArea');
+            gameArea.innerHTML = '<div id="clock"></div><div id="score">Score: ' + gameState.score + '</div><div id="health">Health: ' + gameState.health + '</div>';
+
+            const characterElement = document.createElement('div');
+            characterElement.className = 'character';
+            characterElement.style.left = `${(gameState.character.x + 1) / 2 * gameArea.clientWidth}px`;
+            characterElement.style.top = `${(1 - gameState.character.y) / 2 * gameArea.clientHeight}px`;
+            gameArea.appendChild(characterElement);
+
+            const shadowElement = document.createElement('div');
+            shadowElement.className = 'shadow';
+            shadowElement.style.left = `${(gameState.shadow.x + 1) / 2 * gameArea.clientWidth}px`;
+            shadowElement.style.top = `${(1 - gameState.shadow.y) / 2 * gameArea.clientHeight}px`;
+            gameArea.appendChild(shadowElement);
+
+            gameState.obstacles.forEach(obstacle => {
+                const obstacleElement = document.createElement('div');
+                obstacleElement.className = 'obstacle';
+                obstacleElement.style.left = `${(obstacle.x + 1) / 2 * gameArea.clientWidth}px`;
+                obstacleElement.style.top = `${(1 - obstacle.y) / 2 * gameArea.clientHeight}px`;
+                gameArea.appendChild(obstacleElement);
+            });
+
+            gameState.powerUps.forEach(powerUp => {
+                const powerUpElement = document.createElement('div');
+                powerUpElement.className = 'power-up';
+                powerUpElement.style.left = `${(powerUp.x + 1) / 2 * gameArea.clientWidth}px`;
+                powerUpElement.style.top = `${(1 - powerUp.y) / 2 * gameArea.clientHeight}px`;
+                gameArea.appendChild(powerUpElement);
+            });
+
+            gameState.enemies.forEach(enemy => {
+                const enemyElement = document.createElement('div');
+                enemyElement.className = 'enemy';
+                enemyElement.style.left = `${(enemy.x + 1) / 2 * gameArea.clientWidth}px`;
+                enemyElement.style.top = `${(1 - enemy.y) / 2 * gameArea.clientHeight}px`;
+                gameArea.appendChild(enemyElement);
+            });
+
+            gameState.portals.forEach(portal => {
+                const portalElement = document.createElement('div');
+                portalElement.className = 'portal';
+                portalElement.style.left = `${(portal.x + 1) / 2 * gameArea.clientWidth}px`;
+                portalElement.style.top = `${(1 - portal.y) / 2 * gameArea.clientHeight}px`;
+                gameArea.appendChild(portalElement);
+            });
+
+            gameState.particles.forEach(particle => {
+                const particleElement = document.createElement('div');
+                particleElement.className = 'particle';
+                particleElement.style.left = `${(particle.x + 1) / 2 * gameArea.clientWidth}px`;
+                particleElement.style.top = `${(1 - particle.y) / 2 * gameArea.clientHeight}px`;
+                gameArea.appendChild(particleElement);
+            });
+
+            drawClock();
+        }
+
+        function drawClock() {
+            const clock = document.getElementById('clock');
+            const elapsedTime = (performance.now() / 1000).toFixed(3);
+            clock.innerText = `${elapsedTime}`;
+        }
+
+        function createParticles(x, y) {
+            for (let i = 0; i < 5; i++) { // Reduced the number of particles to 5
+                gameState.particles.push({
+                    x: x,
+                    y: y,
+                    dx: (Math.random() - 0.5) * 0.02,
+                    dy: (Math.random() - 0.5) * 0.02,
+                    life: 0.5 // Reduced the life of particles to 0.5
+                });
+            }
+        }
+
+        function createExplosionParticles(x, y) {
+            for (let i = 0; i < 20; i++) { // Increased the number of particles to 20 for explosion
+                gameState.particles.push({
+                    x: x,
+                    y: y,
+                    dx: (Math.random() - 0.5) * 0.05,
+                    dy: (Math.random() - 0.5) * 0.05,
+                    life: 1, // Increased the life of particles to 1 for explosion
+                    color: 'white' // Set the color of explosion particles to white
+                });
+            }
+        }
+
+        function updateParticles() {
+            gameState.particles.forEach((particle, index) => {
+                particle.x += particle.dx;
+                particle.y += particle.dy;
+                particle.life -= 0.04; // Increased the decay rate of particles
+                if (particle.life <= 0) {
+                    gameState.particles.splice(index, 1);
+                }
+            });
+        }
+
+        function generateLevel(level) {
+            gameState.obstacles = Array.from({ length: level * 5 }, () => ({
+                x: Math.random() * 2 - 1,
+                y: Math.random() * 2 - 1,
+                directionX: Math.random() > 0.5 ? 1 : -1,
+                directionY: Math.random() > 0.5 ? 1 : -1
+            }));
+
+            gameState.powerUps = Array.from({ length: level }, () => ({
+                x: Math.random() * 2 - 1,
+                y: Math.random() * 2 - 1
+            }));
+
+            const minDistance = 0.5; // Minimum distance from the character
+
+            gameState.enemies = Array.from({ length: level }, () => {
+                let enemy;
+                do {
+                    enemy = {
+                        x: Math.random() * 2 - 1,
+                        y: Math.random() * 2 - 1
+                    };
+                } while (Math.sqrt(Math.pow(enemy.x - gameState.character.x, 2) + Math.pow(enemy.y - gameState.character.y, 2)) < minDistance);
+                return enemy;
+            });
+
+            gameState.portals = Array.from({ length: level }, () => ({
+                x: Math.random() * 2 - 1,
+                y: Math.random() * 2 - 1
+            }));
+
+            gameState.character.x = -0.9;
+            gameState.character.y = -0.9;
+            gameState.shadow.x = 0.9;
+            gameState.shadow.y = 0.9;
+            gameState.character.targetX = null;
+            gameState.character.targetY = null;
+            gameState.shadow.targetX = null;
+            gameState.shadow.targetY = null;
+            gameState.character.collectedPowerUps = 0;
+            gameState.shadow.collectedPowerUps = 0;
+            gameState.totalPowerUps = gameState.powerUps.length * 2; // Store the number of powerUps
+        }
+
+        initGame();
+    </script>
+</body>
+</html>
