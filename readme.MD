@@ -12,9 +12,8 @@ Collect all the power-ups and avoid obstacles and enemies.
 - **Character (Red)**: Your main character.
 - **Shadow (Black)**: Moves symmetrically opposite to your character.
 - **Obstacles (Blue)**: Avoid these as they block your path.
-- **Power-ups (Gold)**: Collect these to increase your score.
+- **Power-ups (Gold/Cyan)**: Collect these to increase your score - Your main character can collect the Gold power-ups, and your shadow can collect the black power-ups.
 - **Enemies (Purple)**: Avoid these as they decrease your health.
-- **Portals (Cyan)**: Collect these for extra points.
 
 ### Winning
 Collect all power-ups to win the level. The game will automatically generate a new level once you win.
